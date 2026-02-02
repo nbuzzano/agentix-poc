@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
@@ -55,6 +56,63 @@ class SkillManager:
         else:
             raise ValueError(f"SKILL.md must start with YAML frontmatter: {skill_file}")
 
+    def _load_skill_implementation(self, skill_name: str):
+        """Load deterministic Python implementation for a skill if present."""
+        impl_path = self.skills_path / skill_name / "implementation.py"
+        if not impl_path.exists():
+            return None
+
+        module_name = f"skill_impl_{skill_name.replace('-', '_')}"
+        spec = importlib.util.spec_from_file_location(module_name, str(impl_path))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load skill implementation: {impl_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _execute_agent_skill(
+        self,
+        skill: Dict[str, Any],
+        input_data: Optional[Dict[str, Any]],
+        context: Optional[str],
+    ) -> Dict[str, Any]:
+        """Execute the agentic version of a skill using Claude."""
+        # Build the prompt
+        user_message = self._build_user_prompt(skill, input_data, context)
+
+        response = self.client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4096,
+            system="""You are an expert SQL and data migration specialist. 
+When executing skills, follow the instructions precisely and return valid JSON responses.
+If you encounter an issue, explain it in the JSON response under an "error" field.""",
+            messages=[{"role": "user", "content": user_message}],
+        )
+
+        response_text = response.content[0].text
+
+        # Try to parse JSON from response
+        try:
+            # Look for JSON in the response
+            json_start = response_text.find("{")
+            json_end = response_text.rfind("}") + 1
+            if json_start != -1 and json_end > json_start:
+                json_str = response_text[json_start:json_end]
+                result = json.loads(json_str)
+            else:
+                result = {"response": response_text}
+        except json.JSONDecodeError:
+            self.logger.warning(
+                "Could not parse JSON from skill response, returning raw response"
+            )
+            result = {"response": response_text}
+
+        self.logger.info(
+            f"Skill '{skill['name']}' completed with status: {result.get('status', 'unknown')}"
+        )
+        return result
+
     def execute_skill(
         self,
         skill_name: str,
@@ -72,46 +130,59 @@ class SkillManager:
         Returns:
             Parsed JSON response from Claude
         """
-        # Load the skill
-        skill = self._load_skill(skill_name)
-        self.logger.info(f"Executing skill: {skill['name']}")
-
-        # Build the prompt
-        user_message = self._build_user_prompt(skill, input_data, context)
-
-        # Call Claude
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4096,
-                system="""You are an expert SQL and data migration specialist. 
-When executing skills, follow the instructions precisely and return valid JSON responses.
-If you encounter an issue, explain it in the JSON response under an "error" field.""",
-                messages=[{"role": "user", "content": user_message}],
-            )
+            # Load the skill
+            skill = self._load_skill(skill_name)
+            self.logger.info(f"Executing skill: {skill['name']}")
 
-            response_text = response.content[0].text
+            implementation = self._load_skill_implementation(skill_name)
+            if implementation and hasattr(implementation, "deterministic_execute"):
+                try:
+                    self.logger.info(
+                        f"Executing deterministic Python implementation for '{skill_name}'"
+                    )
+                    deterministic_result = implementation.deterministic_execute(
+                        input_data, self.config, self.logger
+                    )
 
-            # Try to parse JSON from response
-            try:
-                # Look for JSON in the response
-                json_start = response_text.find("{")
-                json_end = response_text.rfind("}") + 1
-                if json_start != -1 and json_end > json_start:
-                    json_str = response_text[json_start:json_end]
-                    result = json.loads(json_str)
-                else:
-                    result = {"response": response_text}
-            except json.JSONDecodeError:
-                self.logger.warning(
-                    f"Could not parse JSON from skill response, returning raw response"
-                )
-                result = {"response": response_text}
+                    if hasattr(implementation, "validate_output"):
+                        valid, reason = implementation.validate_output(deterministic_result)
+                        if valid:
+                            self.logger.info(
+                                f"Deterministic output valid for '{skill_name}', continuing"
+                            )
+                            return deterministic_result
 
-            self.logger.info(
-                f"Skill '{skill['name']}' completed with status: {result.get('status', 'unknown')}"
-            )
-            return result
+                        self.logger.warning(
+                            f"Deterministic output invalid for '{skill_name}': {reason}"
+                        )
+                    else:
+                        self.logger.info(
+                            f"No output validator found for '{skill_name}', using deterministic output"
+                        )
+                        return deterministic_result
+                except Exception as e:
+                    self.logger.warning(
+                        f"Deterministic execution failed for '{skill_name}': {str(e)}"
+                    )
+
+            # Fallback to agent execution
+            self.logger.info(f"Falling back to agent execution for '{skill_name}'")
+            agent_result = self._execute_agent_skill(skill, input_data, context)
+
+            if implementation and hasattr(implementation, "validate_output"):
+                valid, reason = implementation.validate_output(agent_result)
+                if not valid:
+                    self.logger.error(
+                        f"Agent output validation failed for '{skill_name}': {reason}"
+                    )
+                    return {
+                        "status": "ERROR",
+                        "error": f"Agent output validation failed: {reason}",
+                        "skill": skill_name,
+                    }
+
+            return agent_result
 
         except Exception as e:
             self.logger.error(f"Error executing skill '{skill_name}': {str(e)}")

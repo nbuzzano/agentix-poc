@@ -39,7 +39,8 @@ Provide the output as a JSON structure with this schema:
       "tables": ["table1", "table2"],
       "teradata_functions": ["function1", "function2"],
       "complexity_score": "simple|medium|complex",
-      "query_preview": "first 200 chars of query"
+      "query_preview": "first 200 chars of query",
+      "original_query": "full query text"
     }
   ]
 }

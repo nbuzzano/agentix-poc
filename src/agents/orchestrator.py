@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Callable
 from pathlib import Path
 
 from src.core import AgentixLogger
@@ -10,11 +10,65 @@ from src.utils import Config
 from src.agents.skill_manager import SkillManager
 
 
+class PipelineStep:
+    """Declarative definition of a pipeline step."""
+    
+    def __init__(
+        self,
+        name: str,
+        context: str,
+        input_builder: Callable[[Dict[str, Any], Config], Dict[str, Any]],
+    ):
+        self.name = name
+        self.context = context
+        self.input_builder = input_builder
+
+
 class TranslationOrchestrator:
     """
     Orchestrates the entire translation pipeline using Skills.
     Skills are agent-driven components that read SKILL.md files.
     """
+
+    # Declarative pipeline definition - easy to extend
+    PIPELINE_STEPS = [
+        PipelineStep(
+            name="read-queries",
+            context="Read and catalog all Teradata SQL queries from the input directory.",
+            input_builder=lambda prev, cfg: {
+                "input_path": str(cfg.DATA_INPUT_PATH),
+                "file_extensions": [".sql", ".txt"],
+            },
+        ),
+        PipelineStep(
+            name="translate-teradata-to-redshift",
+            context="Translate the Teradata queries to Redshift-compatible SQL. "
+                   "Handle QUALIFY clauses, TIMESTAMP WITH TIME ZONE, and other dialect differences.",
+            input_builder=lambda prev, cfg: {
+                "queries": prev.get("read-queries"),
+                "target_dialect": "redshift",
+                "optimization_level": "advanced",
+            },
+        ),
+        PipelineStep(
+            name="validate-queries",
+            context="Validate that all translated queries are syntactically correct and compatible with Redshift.",
+            input_builder=lambda prev, cfg: {
+                "translations": prev.get("translate-teradata-to-redshift"),
+                "target_database": "redshift",
+            },
+        ),
+        PipelineStep(
+            name="generate-report",
+            context="Generate comprehensive reports and logs of the migration process.",
+            input_builder=lambda prev, cfg: {
+                "read_results": prev.get("read-queries"),
+                "translate_results": prev.get("translate-teradata-to-redshift"),
+                "validate_results": prev.get("validate-queries"),
+                "output_path": str(cfg.DATA_OUTPUT_PATH),
+            },
+        ),
+    ]
 
     def __init__(self, config: Config):
         self.config = config
@@ -24,13 +78,10 @@ class TranslationOrchestrator:
 
     def execute_full_pipeline(self, max_retries: Optional[int] = None) -> dict:
         """
-        Execute the complete pipeline end-to-end using Skills.
+        Execute the complete pipeline end-to-end using declarative skill definitions.
         
-        Skills executed in order:
-        1. read-queries: Catalog SQL files
-        2. translate-teradata-to-redshift: Translate to Redshift syntax
-        3. validate-queries: Validate translated queries
-        4. generate-report: Create comprehensive reports
+        This iterates through PIPELINE_STEPS and executes each skill in order,
+        passing outputs from one step as inputs to the next.
         """
         if max_retries is None:
             max_retries = self.config.MAX_RETRIES
@@ -42,100 +93,41 @@ class TranslationOrchestrator:
         self.step_logger.info("=" * 50)
 
         try:
-            # Skill 1: Read Queries
-            self.step_logger.info("\n[1/4] Executing read-queries skill...")
-            read_input = {
-                "input_path": str(self.config.DATA_INPUT_PATH),
-                "file_extensions": [".sql", ".txt"],
-            }
-            read_result = self.skill_manager.execute_skill(
-                "read-queries",
-                input_data=read_input,
-                context="Read and catalog all Teradata SQL queries from the input directory.",
-            )
-
-            if read_result.get("status") == "ERROR":
-                self.step_logger.error(f"read-queries skill failed: {read_result.get('error')}")
-                return {
-                    "status": "error",
-                    "error": read_result.get("error"),
-                    "skill": "read-queries",
-                }
-
-            # Skill 2: Translate
-            self.step_logger.info("\n[2/4] Executing translate-teradata-to-redshift skill...")
-            translate_input = {
-                "queries": read_result,
-                "target_dialect": "redshift",
-                "optimization_level": "advanced",
-            }
-            translate_result = self.skill_manager.execute_skill(
-                "translate-teradata-to-redshift",
-                input_data=translate_input,
-                context="Translate the Teradata queries to Redshift-compatible SQL. "
-                       "Handle QUALIFY clauses, TIMESTAMP WITH TIME ZONE, and other dialect differences.",
-            )
-
-            if translate_result.get("status") == "ERROR":
-                self.step_logger.error(f"translate skill failed: {translate_result.get('error')}")
-                return {
-                    "status": "error",
-                    "error": translate_result.get("error"),
-                    "skill": "translate-teradata-to-redshift",
-                }
-
-            # Skill 3: Validate
-            self.step_logger.info("\n[3/4] Executing validate-queries skill...")
-            validate_input = {
-                "translations": translate_result,
-                "target_database": "redshift",
-            }
-            validate_result = self.skill_manager.execute_skill(
-                "validate-queries",
-                input_data=validate_input,
-                context="Validate that all translated queries are syntactically correct and compatible with Redshift.",
-            )
-
-            if validate_result.get("status") == "ERROR":
-                self.step_logger.error(f"validate skill failed: {validate_result.get('error')}")
-                return {
-                    "status": "error",
-                    "error": validate_result.get("error"),
-                    "skill": "validate-queries",
-                }
-
-            # Skill 4: Generate Report
-            self.step_logger.info("\n[4/4] Executing generate-report skill...")
-            report_input = {
-                "read_results": read_result,
-                "translate_results": translate_result,
-                "validate_results": validate_result,
-                "output_path": str(self.config.DATA_OUTPUT_PATH),
-            }
-            report_result = self.skill_manager.execute_skill(
-                "generate-report",
-                input_data=report_input,
-                context="Generate comprehensive reports and logs of the migration process.",
-            )
-
-            if report_result.get("status") == "ERROR":
-                self.step_logger.error(f"report skill failed: {report_result.get('error')}")
-                return {
-                    "status": "error",
-                    "error": report_result.get("error"),
-                    "skill": "generate-report",
-                }
+            results = {}
+            
+            for idx, step in enumerate(self.PIPELINE_STEPS, 1):
+                self.step_logger.info(f"\n[{idx}/{len(self.PIPELINE_STEPS)}] Executing {step.name} skill...")
+                
+                # Build input using the step's input_builder
+                input_data = step.input_builder(results, self.config)
+                
+                # Execute the skill
+                result = self.skill_manager.execute_skill(
+                    step.name,
+                    input_data=input_data,
+                    context=step.context,
+                )
+                
+                # Check for errors
+                if result.get("status") == "ERROR":
+                    self.step_logger.error(f"{step.name} skill failed: {result.get('error')}")
+                    return {
+                        "status": "error",
+                        "error": result.get("error"),
+                        "skill": step.name,
+                    }
+                
+                # Store result for next steps
+                results[step.name] = result
 
             self.step_logger.info("\n" + "=" * 50)
             self.step_logger.info("Pipeline Completed Successfully")
             self.step_logger.info("=" * 50)
 
+            # Return all results
             return {
                 "status": "success",
-                "read_results": read_result,
-                "translate_results": translate_result,
-                "validate_results": validate_result,
-                "report": report_result,
+                **results,
                 "logs_path": str(self.config.LOGS_PATH),
             }
 
