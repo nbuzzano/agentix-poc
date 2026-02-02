@@ -1,121 +1,162 @@
 # Agentix PoC - Teradata to Redshift Query Translator
 
-🚀 Sistema agentico modular y determinístico para traducir queries de Teradata a Redshift con validaciones automáticas y logging completo.
+🚀 Agentic system for translating Teradata SQL queries to Amazon Redshift using Claude-powered Skills.
 
-## Características Principales
+## 🎯 What is Agentix?
 
-- 🤖 **IA + Determinismo**: Claude para traducción + código Python para lógica
-- 🔄 **Reintentos Inteligentes**: 3 estrategias (básica, avanzada, iterativa)
-- 📊 **Validación Determinística**: Sin ejecución real, análisis sintáctico robusto
-- 📝 **Logging Multinivel**: Por tabla, carpeta y resumen general
-- 🛠️ **Arquitectura Modular**: 4 pasos independientes, fácil extensión
-- 💻 **CLI Flexible**: Flujo completo o pasos individuales
-- ✅ **Production-Ready**: Código profesional, bien documentado
+Agentix is an **Agent-Based Skills Architecture** for SQL query translation. Instead of traditional code-based steps, each phase of the translation pipeline is defined as a declarative **Skill** - a folder with a `SKILL.md` file that Claude interprets and executes intelligently.
 
-## Estructura del Proyecto
+### Key Features
+
+- 🤖 **Agent-Powered**: Claude interprets skill instructions for flexible, intelligent execution
+- 📁 **Declarative Skills**: Define tasks as markdown instructions, not code
+- 🔄 **Multi-Phase Pipeline**: Read → Translate → Validate → Report
+- 📊 **Comprehensive Validation**: Syntax checking and Redshift compatibility analysis
+- 📝 **Detailed Logging**: Results saved as JSON for analysis
+- 🛠️ **Extensible**: Add new skills by creating new SKILL.md files
+- 💻 **Easy CLI**: Simple commands for full pipeline or individual skills
+
+## Architecture Overview
 
 ```
-agentix-poc/
-├── src/
-│   ├── core/               # Componentes centrales
-│   ├── steps/              # Pasos ejecutables (determinísticos)
-│   ├── agents/             # Orquestadores de agentes
-│   ├── utils/              # Utilidades y helpers
-│   └── main.py            # Punto de entrada
-├── data/
-│   ├── input/             # Queries de entrada (Teradata)
-│   └── output/            # Queries traducidas (Redshift)
-├── logs/                  # Logs de ejecución
-└── tests/                 # Tests unitarios
+SKILL = Folder with SKILL.md file
+        ↓
+        Instructions for Claude to follow
+        ↓
+        Claude executes and returns JSON
+        ↓
+        Next skill in pipeline
 ```
 
-## 🚀 Quick Start (2 minutos)
+### 4 Core Skills
+
+1. **read-queries** - Catalog SQL files with metadata
+2. **translate-teradata-to-redshift** - Translate to Redshift syntax
+3. **validate-queries** - Validate compatibility
+4. **generate-report** - Create comprehensive reports
+
+## 🚀 Quick Start (5 minutes)
 
 ```bash
-# 1. Entrar al directorio
-cd /home/nbuzzano/repositories/agentix-poc
+# 1. Clone and enter
+git clone <repo>
+cd agentix-poc
 
-# 2. Instalar (automático)
+# 2. Install
 bash install.sh
 
-# 3. Configurar
+# 3. Configure
 cp .env.example .env
-# Editar .env: ANTHROPIC_API_KEY=sk-ant-xxxxx
+# Add your ANTHROPIC_API_KEY
 
-# 4. Ejecutar
-source venv/bin/activate
-agentix translate
+# 4. Run
+agentix translate --log-level DEBUG
 ```
 
-## 📦 Instalación Detallada
+**Output**: Check `./logs/` for results and reports
+
+## 📦 Installation
+
 
 ```bash
-# Entorno virtual
+# Virtual environment
 python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Dependencias
+# Install dependencies
 pip install -e ".[dev]"
 
-# Configuración
+# Setup configuration
 cp .env.example .env
-# Editar .env con tu ANTHROPIC_API_KEY
+# Edit .env with your ANTHROPIC_API_KEY
 ```
 
-## 💻 Uso de la CLI
+## 💻 CLI Commands
 
-### Flujo Completo (Recomendado)
+### Full Pipeline (Recommended)
 
 ```bash
-# Básico (usa valores por defecto)
+# Basic (uses default paths)
 agentix translate
 
-# Con opciones personalizadas
+# With custom options
 agentix translate \
-  --input ./data/input \
-  --output ./data/output \
-  --logs ./logs \
+  --input ./my-queries/ \
+  --output ./redshift-queries/ \
+  --logs ./execution-logs/ \
   --strategy advanced \
-  --max-retries 5 \
   --log-level DEBUG
 ```
 
-### Pasos Individuales
+### Individual Skills
 
 ```bash
-# Ver pasos disponibles
-agentix steps list
+# List available skills
+agentix skills list
 
-# Ejecutar cada paso
-agentix steps run read_queries
-agentix steps run translate --max-retries 3
-age🔧 Estrategias de Traducción
-
-| Estrategia | Descripción | Mejor para |
-|-----------|------------|-----------|
-| **basic** | Traducción simple y directa | Queries simples, punto de partida |
-| **advanced** | Análisis estructural + transformaciones | Queries con Teradata-específicos |
-| **iterative** | Desglosa en partes, traduce, reasambla | Queries muy complejas |
-
-Ejemplo:
-```bash
-agentix translate --strategy advanced --max-retries 5
+# Run specific skill
+agentix skills run read-queries
+agentix skills run translate-teradata-to-redshift
+agentix skills run validate-queries
+agentix skills run generate-report
 ```
 
-## 📊 Logging y Reportes
+### Project Initialization
 
-El sistema genera logs en múltiples niveles:
+```bash
+# Initialize project structure
+agentix init
+
+# Shows project info
+agentix info
+```
+
+## 🎯 How It Works
+
+### Pipeline Flow
+
+```
+1. read-queries          → Catalog SQL files with metadata
+   ↓
+2. translate-teradata-to-redshift → Translate to Redshift syntax
+   ↓
+3. validate-queries      → Validate compatibility and syntax
+   ↓
+4. generate-report       → Create comprehensive reports
+```
+
+### Each Skill
+
+A **Skill** is a folder containing:
+- **SKILL.md**: Instructions for Claude
+- **YAML frontmatter**: name, description
+- **Examples & Guidelines**: How to execute
+
+Example (`src/skills/read-queries/SKILL.md`):
+```markdown
+---
+name: read-queries
+description: Reads and catalogs SQL queries from a directory
+---
+
+# Read Queries Skill
+
+[Instructions for Claude to follow...]
+
+## Output Format
+[Expected JSON schema...]
+```
+
+## 📊 Results and Logging
+
+Output files are saved as JSON:
 
 ```
 logs/
-├── agentix.log                 # Log real-time
-├── summary.json                # Resumen general
-├── tables/
-│   ├── customer_orders.json    # Detalles por tabla
-│   └── ...
-└── folders/
-    ├── root.json               # Resumen por carpeta
-    └── ...
+├── read_queries_output.json              # Cataloged queries
+├── translate_teradata_to_redshift_output.json  # Translated queries
+├── validate_queries_output.json          # Validation results
+└── generate_report_output.json           # Final report
 ```
 
 **Información capturada**:
