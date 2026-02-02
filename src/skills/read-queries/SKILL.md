@@ -1,6 +1,9 @@
 ---
 name: read-queries
 description: Reads and catalogs Teradata SQL queries from a specified input directory, extracting metadata about each query including type, complexity, and Teradata-specific functions used.
+file_extensions:
+  - .sql
+  - .txt
 ---
 
 # Read Queries Skill

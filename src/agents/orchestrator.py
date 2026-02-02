@@ -15,11 +15,9 @@ class PipelineStep:
     def __init__(
         self,
         name: str,
-        context: str,
         input_builder: Callable[[Dict[str, Any], Config], Dict[str, Any]],
     ):
         self.name = name
-        self.context = context
         self.input_builder = input_builder
 
 
@@ -33,33 +31,24 @@ class TranslationOrchestrator:
     PIPELINE_STEPS = [
         PipelineStep(
             name="read-queries",
-            context="Read and catalog all Teradata SQL queries from the input directory.",
             input_builder=lambda prev, cfg: {
                 "input_path": str(cfg.DATA_INPUT_PATH),
-                "file_extensions": [".sql", ".txt"],
             },
         ),
         PipelineStep(
             name="translate-teradata-to-redshift",
-            context="Translate the Teradata queries to Redshift-compatible SQL. "
-                   "Handle QUALIFY clauses, TIMESTAMP WITH TIME ZONE, and other dialect differences.",
             input_builder=lambda prev, cfg: {
                 "queries": prev.get("read-queries"),
-                "target_dialect": "redshift",
-                "optimization_level": "advanced",
             },
         ),
         PipelineStep(
             name="validate-queries",
-            context="Validate that all translated queries are syntactically correct and compatible with Redshift.",
             input_builder=lambda prev, cfg: {
                 "translations": prev.get("translate-teradata-to-redshift"),
-                "target_database": "redshift",
             },
         ),
         PipelineStep(
             name="generate-report",
-            context="Generate comprehensive reports and logs of the migration process.",
             input_builder=lambda prev, cfg: {
                 "read_results": prev.get("read-queries"),
                 "translate_results": prev.get("translate-teradata-to-redshift"),
@@ -104,7 +93,6 @@ class TranslationOrchestrator:
                 result = self.skill_manager.execute_skill(
                     step.name,
                     input_data=input_data,
-                    context=step.context,
                 )
                 
                 # Check for errors
@@ -153,11 +141,9 @@ class TranslationOrchestrator:
         self.step_logger.info(f"Executing skill: {skill_name}")
 
         try:
-            context = kwargs.get("context", "")
             result = self.skill_manager.execute_skill(
                 skill_name,
                 input_data=input_data,
-                context=context,
             )
             return {
                 "status": "success" if result.get("status") != "ERROR" else "error",

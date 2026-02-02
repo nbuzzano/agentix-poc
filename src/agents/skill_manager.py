@@ -52,6 +52,7 @@ class SkillManager:
                 "description": frontmatter.get("description", ""),
                 "instructions": instructions,
                 "full_path": str(skill_file),
+                "config": {k: v for k, v in frontmatter.items() if k not in ["name", "description"]},
             }
         else:
             raise ValueError(f"SKILL.md must start with YAML frontmatter: {skill_file}")
@@ -75,11 +76,10 @@ class SkillManager:
         self,
         skill: Dict[str, Any],
         input_data: Optional[Dict[str, Any]],
-        context: Optional[str],
     ) -> Dict[str, Any]:
         """Execute the agentic version of a skill using Claude."""
         # Build the prompt
-        user_message = self._build_user_prompt(skill, input_data, context)
+        user_message = self._build_user_prompt(skill, input_data)
 
         response = self.client.messages.create(
             model="claude-3-5-sonnet-20241022",
@@ -117,7 +117,6 @@ If you encounter an issue, explain it in the JSON response under an "error" fiel
         self,
         skill_name: str,
         input_data: Optional[Dict[str, Any]] = None,
-        context: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute a skill by sending its instructions to Claude.
@@ -125,7 +124,6 @@ If you encounter an issue, explain it in the JSON response under an "error" fiel
         Args:
             skill_name: Name of the skill folder (e.g., "read-queries")
             input_data: Context data to provide to Claude (paths, previous results, etc.)
-            context: Additional context about the task
 
         Returns:
             Parsed JSON response from Claude
@@ -134,6 +132,15 @@ If you encounter an issue, explain it in the JSON response under an "error" fiel
             # Load the skill
             skill = self._load_skill(skill_name)
             self.logger.info(f"Executing skill: {skill['name']}")
+
+            # Merge skill config into input_data
+            if input_data is None:
+                input_data = {}
+            else:
+                input_data = dict(input_data)  # Make a copy to avoid mutating original
+            
+            # Add skill configuration to input data (these come from SKILL.md frontmatter)
+            input_data.update(skill.get("config", {}))
 
             implementation = self._load_skill_implementation(skill_name)
             if implementation and hasattr(implementation, "deterministic_execute"):
@@ -168,7 +175,7 @@ If you encounter an issue, explain it in the JSON response under an "error" fiel
 
             # Fallback to agent execution
             self.logger.info(f"Falling back to agent execution for '{skill_name}'")
-            agent_result = self._execute_agent_skill(skill, input_data, context)
+            agent_result = self._execute_agent_skill(skill, input_data)
 
             if implementation and hasattr(implementation, "validate_output"):
                 valid, reason = implementation.validate_output(agent_result)
@@ -193,7 +200,7 @@ If you encounter an issue, explain it in the JSON response under an "error" fiel
             }
 
     def _build_user_prompt(
-        self, skill: Dict[str, Any], input_data: Optional[Dict[str, Any]], context: Optional[str]
+        self, skill: Dict[str, Any], input_data: Optional[Dict[str, Any]]
     ) -> str:
         """Build the user message for Claude."""
         prompt_parts = [
@@ -201,9 +208,6 @@ If you encounter an issue, explain it in the JSON response under an "error" fiel
             f"\n{skill['description']}",
             f"\n## Instructions\n{skill['instructions']}",
         ]
-
-        if context:
-            prompt_parts.append(f"\n## Context\n{context}")
 
         if input_data:
             prompt_parts.append(f"\n## Input Data\n```json\n{json.dumps(input_data, indent=2)}\n```")

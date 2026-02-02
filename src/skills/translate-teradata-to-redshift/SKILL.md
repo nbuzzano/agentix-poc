@@ -1,6 +1,8 @@
 ---
 name: translate-teradata-to-redshift
 description: Translates Teradata SQL queries to Amazon Redshift-compatible SQL syntax, handling dialect differences, function mappings, and data type conversions.
+target_dialect: redshift
+optimization_level: advanced
 ---
 
 # Translate Teradata to Redshift Skill

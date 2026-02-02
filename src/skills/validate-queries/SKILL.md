@@ -1,6 +1,7 @@
 ---
 name: validate-queries
 description: Validates translated SQL queries for syntax correctness and Redshift compatibility, identifying any remaining issues before execution.
+target_database: redshift
 ---
 
 # Validate Queries Skill
