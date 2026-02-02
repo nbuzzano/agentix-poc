@@ -1,0 +1,42 @@
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.egg-info/
+**/dist/
+**/build/
+**/.pytest_cache/
+**/.coverage
+**/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+venv/
+env/
+
+# Data
+data/output/*
+data/synthetic/*
+!data/output/.gitkeep
+!data/synthetic/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+temp/
+*.bak
