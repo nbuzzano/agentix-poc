@@ -61,7 +61,7 @@ def translate(
     log_level: str,
 ):
     """Execute full translation pipeline"""
-    click.echo("🚀 Starting Agentix Translation Pipeline")
+    click.echo("🚀 Starting Agentix Translation Pipeline (Agent-Based Skills)")
     click.echo(f"   Input:  {input}")
     click.echo(f"   Output: {output}")
     click.echo(f"   Logs:   {logs}")
@@ -83,18 +83,43 @@ def translate(
 
         click.echo("\n" + "=" * 50)
         if result["status"] == "success":
-            summary = result["summary"]
             click.secho("✅ Pipeline Completed Successfully!", fg="green", bold=True)
-            click.echo(f"\nSummary:")
-            click.echo(f"  Total Items: {summary['total_items']}")
-            click.echo(f"  Successful: {summary['successful_items']}")
-            click.echo(f"  Failed: {summary['failed_items']}")
-            click.echo(f"  Success Rate: {summary['success_rate']:.1f}%")
+            
+            # Show results from each skill
+            read_results = result.get("read_results", {})
+            translate_results = result.get("translate_results", {})
+            validate_results = result.get("validate_results", {})
+            report = result.get("report", {})
+            
+            click.echo(f"\n📖 Read Queries Skill:")
+            if isinstance(read_results, dict):
+                click.echo(f"   Status: {read_results.get('status', 'unknown')}")
+                if 'folders' in read_results:
+                    click.echo(f"   Folders processed: {len(read_results.get('folders', []))}")
+                    click.echo(f"   Total queries: {read_results.get('total_queries', 0)}")
+            
+            click.echo(f"\n🔄 Translate Skill:")
+            if isinstance(translate_results, dict):
+                click.echo(f"   Status: {translate_results.get('status', 'unknown')}")
+            
+            click.echo(f"\n✔️  Validate Skill:")
+            if isinstance(validate_results, dict):
+                click.echo(f"   Status: {validate_results.get('status', 'unknown')}")
+            
+            click.echo(f"\n📊 Generate Report Skill:")
+            if isinstance(report, dict):
+                click.echo(f"   Status: {report.get('status', 'unknown')}")
+                if 'summary' in report:
+                    summary = report['summary']
+                    click.echo(f"   Total Items: {summary.get('total_queries', 0)}")
+                    click.echo(f"   Successful: {summary.get('successful', 0)}")
+                    click.echo(f"   Failed: {summary.get('failed', 0)}")
+            
             click.echo(f"\nLogs: {result['logs_path']}")
-        elif result["status"] == "empty":
-            click.secho("⚠️  No queries found to process", fg="yellow")
         else:
             click.secho(f"❌ Error: {result['error']}", fg="red")
+            if 'skill' in result:
+                click.echo(f"Failed skill: {result['skill']}")
             click.echo(f"Logs: {result['logs_path']}")
 
         click.echo("=" * 50)
@@ -105,83 +130,103 @@ def translate(
 
 
 @cli.group()
-def steps():
-    """Manage individual pipeline steps"""
+def skills():
+    """Manage individual skills"""
     pass
 
 
-@steps.command()
+@skills.command()
 def list():
-    """List available steps"""
-    click.echo("Available steps:")
-    steps_list = [
-        ("read_queries", "Read SQL queries from input folders"),
-        ("translate", "Translate queries with retry logic"),
-        ("validate", "Validate translated queries"),
-        ("report", "Generate reports and summaries"),
+    """List available skills"""
+    click.echo("Available Skills:")
+    skills_list = [
+        ("read-queries", "Read and catalog SQL queries from input folders"),
+        ("translate-teradata-to-redshift", "Translate Teradata queries to Redshift syntax"),
+        ("validate-queries", "Validate translated queries for Redshift compatibility"),
+        ("generate-report", "Generate comprehensive reports and logs"),
     ]
 
-    for step_name, description in steps_list:
-        click.echo(f"  • {step_name:<15} - {description}")
+    for skill_name, description in skills_list:
+        click.echo(f"  • {skill_name:<30} - {description}")
 
 
-@steps.command()
-@click.argument("step_name")
+@skills.command()
+@click.argument("skill_name")
 @click.option("--input", type=click.Path(exists=True), default="./data/input")
 @click.option("--output", type=click.Path(), default="./data/output")
 @click.option("--logs", type=click.Path(), default="./logs")
-@click.option("--max-retries", type=int, default=3)
 @click.option("--data-file", type=click.Path(exists=True), help="Input data JSON file")
+@click.option("--log-level", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), default="INFO")
 def run(
-    step_name: str,
+    skill_name: str,
     input: str,
     output: str,
     logs: str,
-    max_retries: int,
     data_file: Optional[str],
+    log_level: str,
 ):
-    """Run a specific step"""
-    click.echo(f"📍 Running step: {step_name}")
+    """Run a specific skill"""
+    click.echo(f"🎯 Executing skill: {skill_name}")
 
     # Configure
     Config.DATA_INPUT_PATH = input
     Config.DATA_OUTPUT_PATH = output
     Config.LOGS_PATH = logs
+    Config.LOG_LEVEL = log_level
     Config.ensure_paths()
 
     try:
         orchestrator = TranslationOrchestrator(Config)
 
         # Load input data if provided
-        input_data = {}
+        input_data = None
         if data_file:
             with open(data_file, "r") as f:
                 input_data = json.load(f)
             click.echo(f"   Loaded data from: {data_file}")
+        else:
+            # Build default input based on skill
+            if skill_name == "read-queries":
+                input_data = {
+                    "input_path": input,
+                    "file_extensions": [".sql", ".txt"],
+                }
+            else:
+                input_data = {}
 
-        # Execute step
-        result = orchestrator.execute_step(
-            step_name,
-            queries_by_folder=input_data.get("queries_by_folder"),
-            translation_results=input_data.get("translation_results"),
-            validation_results=input_data.get("validation_results"),
-            max_retries=max_retries,
+        # Execute skill
+        result = orchestrator.execute_skill(
+            skill_name,
+            input_data=input_data,
+            context=f"Executing {skill_name} skill as requested"
         )
 
         if result["status"] == "success":
-            click.secho(f"✅ Step '{step_name}' completed!", fg="green")
-            if "step_result" in result:
-                sr = result["step_result"]
-                click.echo(f"\n  Total: {sr['total_items']}")
-                click.echo(f"  Successful: {sr['successful_items']}")
-                click.echo(f"  Failed: {sr['failed_items']}")
+            click.secho(f"✅ Skill '{skill_name}' executed successfully!", fg="green")
+            
+            skill_data = result.get("data", {})
+            click.echo(f"\nResult:")
+            # Show summary based on skill type
+            if skill_name == "read-queries":
+                if isinstance(skill_data, dict) and "total_queries" in skill_data:
+                    click.echo(f"  Total queries: {skill_data.get('total_queries', 0)}")
+                    click.echo(f"  Folders processed: {len(skill_data.get('folders', []))}")
+            elif skill_name == "translate-teradata-to-redshift":
+                click.echo(f"  Status: {skill_data.get('status', 'unknown')}")
+            elif skill_name == "validate-queries":
+                click.echo(f"  Status: {skill_data.get('status', 'unknown')}")
+            elif skill_name == "generate-report":
+                if isinstance(skill_data, dict) and "summary" in skill_data:
+                    summary = skill_data["summary"]
+                    click.echo(f"  Total queries: {summary.get('total_queries', 0)}")
+                    click.echo(f"  Successful: {summary.get('successful', 0)}")
+                    click.echo(f"  Failed: {summary.get('failed', 0)}")
 
             # Save output data
-            if "data" in result:
-                output_file = Path(logs) / f"{step_name}_output.json"
-                # Convert data to serializable format
-                # (would need custom JSON encoder for real objects)
-                click.echo(f"\n  Output: {output_file}")
+            output_file = Path(logs) / f"{skill_name.replace('-', '_')}_output.json"
+            with open(output_file, "w") as f:
+                json.dump(skill_data, f, indent=2)
+            click.echo(f"\n  Output saved to: {output_file}")
 
         else:
             click.secho(f"❌ Error: {result['error']}", fg="red")
@@ -195,6 +240,7 @@ def run(
 def init():
     """Initialize project structure"""
     click.echo("📁 Initializing Agentix project structure...")
+    click.echo("   (Agent-Based Skills Architecture)")
 
     paths = [
         "./data/input",
@@ -229,6 +275,10 @@ QUALIFY ROW_NUMBER() OVER (ORDER BY total_amount DESC) <= 10;
     click.echo("  1. Add Teradata queries to ./data/input/")
     click.echo("  2. Set ANTHROPIC_API_KEY in .env")
     click.echo("  3. Run: agentix translate")
+    click.echo("\nAvailable commands:")
+    click.echo("  • agentix translate          - Run full pipeline")
+    click.echo("  • agentix skills list        - List available skills")
+    click.echo("  • agentix skills run <name>  - Execute a specific skill")
 
 
 @cli.command()
