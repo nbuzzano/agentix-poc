@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 import yaml
 
 from anthropic import Anthropic
-from src.utils import Config
+from src.core import Config
 
 
 class SkillManager:

@@ -2,8 +2,7 @@
 
 from typing import Dict, Any
 
-from src.core import FileHandler
-from src.utils import Config, SQLValidator
+from src.core import FileHandler, Config, SQLValidator
 
 
 def deterministic_execute(input_data: Dict[str, Any] | None, config: Config, logger) -> Dict[str, Any]:

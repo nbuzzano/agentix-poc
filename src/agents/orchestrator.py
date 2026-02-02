@@ -5,8 +5,7 @@ import logging
 from typing import Optional, List, Dict, Any, Callable
 from pathlib import Path
 
-from src.core import AgentixLogger
-from src.utils import Config
+from src.core import AgentixLogger, Config
 from src.agents.skill_manager import SkillManager
 
 

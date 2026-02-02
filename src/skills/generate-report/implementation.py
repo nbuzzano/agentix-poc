@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, List
 
-from src.utils import Config
+from src.core import Config
 
 
 def deterministic_execute(input_data: Dict[str, Any] | None, config: Config, logger) -> Dict[str, Any]:

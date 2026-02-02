@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from src.utils import Config
+from src.core import Config
 from src.agents import TranslationOrchestrator
 
 

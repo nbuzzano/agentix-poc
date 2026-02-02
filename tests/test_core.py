@@ -3,8 +3,7 @@
 import pytest
 import tempfile
 from pathlib import Path
-from src.core import QueryMetadata, QueryType, FileHandler, TranslationEngine
-from src.utils import SQLValidator
+from src.core import QueryMetadata, QueryType, FileHandler, TranslationEngine, SQLValidator
 
 
 class TestFileHandler:
